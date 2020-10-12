@@ -220,11 +220,9 @@ export class GraphComponent implements OnInit, AfterViewInit {
 
   showLinksFromNode(nodeId) {
     this.linkTypes = 'showOptimal';
-    let createdLinksTo = {};
     Object.keys(this._showEdgesOfType).forEach(key => this._showEdgesOfType[key] = false);
 
     let edges = this.rawData.relations.filter(el => el.to_concept_id === nodeId || el.concept_id === nodeId).map(el => {
-
       return {
         from: el.concept_id,
         to: el.to_concept_id,
@@ -232,8 +230,6 @@ export class GraphComponent implements OnInit, AfterViewInit {
       };
     });
     edges = edges.concat(this.rawData.didactic.filter(el => el.to_id === nodeId || el.from_id === nodeId ).map(el => {
-
-
       return {
         to: el.from_id,
         from: el.to_id,
@@ -244,8 +240,6 @@ export class GraphComponent implements OnInit, AfterViewInit {
     }));
     const node = this.nodeLinks[nodeId];
     const aspects = this.rawData.concepts.filter(el => el.aspectOf === nodeId || node.aspectOf === el.id).map(node => {
-
-
       return {to: node.aspectOf,
               from: node.id,
               class: 'aspect',
@@ -258,12 +252,58 @@ export class GraphComponent implements OnInit, AfterViewInit {
       }
     });
 
-    edges = edges.concat(aspects).filter(el => el !== null);
+    edges = edges.concat(aspects);
+
+    let edgeFromNode = [];
+    let edgeToNode = [];
 
     const nodes = new Set();
     edges.forEach(el => {
       nodes.add(this.nodeLinks[el.to]);
       nodes.add(this.nodeLinks[el.from]);
+    });
+
+    const outNodeId = 'out';
+    const inNodeId = 'in';
+
+    nodes.add({
+      id: inNodeId,
+      label: 'in ' + node.label,
+      font: {size: 17},
+      class: node.class,
+      size: node.size
+    });
+    nodes.add({
+      id: outNodeId,
+      label: 'from ' + node.label,
+      font: {size: 17},
+      class: node.class,
+      size: node.size
+    });
+
+    edges.forEach((el, i) => {
+      if (el.from === node.id && !edgeToNode.find(edge => edge.to === el.to)) {
+        el.from = inNodeId;
+        edgeToNode.push(el);
+      } else if (el.to === node.id && !edgeFromNode.find(edge => edge.from === el.from)) {
+        el.to = outNodeId;
+        edgeFromNode.push(el);
+      } else {
+        edges[i] = null;
+      }
+    });
+
+    edges = edges.filter(el => el !== null);
+
+    edges.push({
+      to: nodeId,
+      from: outNodeId,
+      class: node.class
+    });
+    edges.push({
+      to: inNodeId,
+      from: nodeId,
+      class: node.class
     });
 
     this.network.setData({nodes: Array.from(nodes), edges});
