@@ -1,0 +1,34 @@
+<div id="mynetwork" [class.invisible]="!loaded" #siteConfigNetwork ></div>
+<div class="wrapper" *ngIf="loaded">
+
+  <button class="btn btn-dark mb-3" *ngIf="!fullGraphShown" (click)="drawFullGraph()">Show full graph</button>
+
+  <div class="link-types">
+    <!--  < class="btn btn-dark"  *ngFor="let edgeType of _showEdgesOfType">{{edgeType}}</>-->
+    <div class="form-check">
+      <input class="form-check-input" type="radio" (change)="setOptimalEdges()" [(ngModel)]="linkTypes" name="linkTypesRadio" id="opt1" value="showOptimal" checked>
+      <label class="form-check-label" for="opt1">
+        Show optimal graph
+      </label>
+    </div>
+    <div class="form-check">
+      <input class="form-check-input" type="radio" [(ngModel)]="linkTypes" name="linkTypesRadio" id="opt2" value="ChooseLinks">
+      <label class="form-check-label" for="opt2">
+        Choose links to show
+      </label>
+    </div>
+
+    <div class="links-options" [class.disabled]="linkTypes !== 'ChooseLinks'">
+      <div class="form-check"  *ngFor="let edgeType of showEdgesOfType">
+        <input class="form-check-input" type="checkbox" (change)="updateEdges()" [(ngModel)]="_showEdgesOfType[edgeType]" [value]="true" [id]="edgeType">
+        <label class="form-check-label" [for]="edgeType">
+          {{edgeType}}
+        </label>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="loading" *ngIf="!loaded">Loading...</div>
+
