@@ -231,21 +231,9 @@ export class GraphComponent implements OnInit, AfterViewInit {
         class: el.class
       };
     });
-    edges = edges.concat(this.rawData.didactic.filter(el => el.to_id === nodeId || el.from_id === nodeId ).map(el => {
 
-
-      return {
-        to: el.from_id,
-        from: el.to_id,
-        class: 'didactic',
-        dashes: true,
-        color: '#9d9d9d'
-      }
-    }));
     const node = this.nodeLinks[nodeId];
-    const aspects = this.rawData.concepts.filter(el => el.aspectOf === nodeId || node.aspectOf === el.id).map(node => {
-
-
+    const aspects = this.rawData.concepts.filter(el => el.aspectOf === nodeId).map(node => {
       return {to: node.aspectOf,
               from: node.id,
               class: 'aspect',
@@ -258,13 +246,39 @@ export class GraphComponent implements OnInit, AfterViewInit {
       }
     });
 
-    edges = edges.concat(aspects).filter(el => el !== null);
+    if (node.aspectOf){
+      aspects.push({
+        to: nodeId,
+        from: node.aspectOf,
+        class: 'aspect',
+        color: '#4d1899',
+        arrows: {
+          from: {
+            enabled: false
+          }
+        }
+      });
+    }
+    edges = edges.concat(aspects);
+    edges = edges.concat(this.rawData.didactic.filter(el => (el.to_id === nodeId || el.from_id === nodeId) &&
+      !edges.find(edge => edge.to === el.from_id && edge.from === el.to_id)).map(el => {
+      return {
+        to: el.from_id,
+        from: el.to_id,
+        class: 'didactic',
+        dashes: true,
+        color: '#9d9d9d'
+      }
+    }));
 
     const nodes = new Set();
     edges.forEach(el => {
       nodes.add(this.nodeLinks[el.to]);
       nodes.add(this.nodeLinks[el.from]);
     });
+
+
+
 
     this.network.setData({nodes: Array.from(nodes), edges});
     this.fullGraphShown = false;
