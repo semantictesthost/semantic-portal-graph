@@ -239,9 +239,9 @@ export class GraphComponent implements OnInit, AfterViewInit {
       }
     }));
     const node = this.nodeLinks[nodeId];
-    const aspects = this.rawData.concepts.filter(el => el.aspectOf === nodeId || node.aspectOf === el.id).map(node => {
-      return {to: node.aspectOf,
-              from: node.id,
+    const aspects = this.rawData.concepts.filter(el => el.aspectOf === nodeId ).map(el => {
+        return {to: el.aspectOf,
+              from: el.id,
               class: 'aspect',
               color: '#4d1899',
               arrows: {
@@ -251,6 +251,19 @@ export class GraphComponent implements OnInit, AfterViewInit {
               }
       }
     });
+
+    if (node.aspectOf) {
+      edges.push({to: node.aspectOf,
+        from: nodeId,
+        class: 'aspect',
+        color: '#4d1899',
+        arrows: {
+          from: {
+            enabled: false
+          }
+        }
+      });
+    }
 
     edges = edges.concat(aspects);
 
@@ -266,20 +279,6 @@ export class GraphComponent implements OnInit, AfterViewInit {
     const outNodeId = 'out';
     const inNodeId = 'in';
 
-    nodes.add({
-      id: inNodeId,
-      label: 'in ' + node.label,
-      font: {size: 17},
-      class: node.class,
-      size: node.size
-    });
-    nodes.add({
-      id: outNodeId,
-      label: 'from ' + node.label,
-      font: {size: 17},
-      class: node.class,
-      size: node.size
-    });
 
     edges.forEach((el, i) => {
       if (el.from === node.id && !edgeToNode.find(edge => edge.to === el.to)) {
@@ -295,16 +294,39 @@ export class GraphComponent implements OnInit, AfterViewInit {
 
     edges = edges.filter(el => el !== null);
 
-    edges.push({
-      to: nodeId,
-      from: outNodeId,
-      class: node.class
-    });
-    edges.push({
-      to: inNodeId,
-      from: nodeId,
-      class: node.class
-    });
+    if (edgeFromNode.length){
+      edges.push({
+        to: nodeId,
+        from: outNodeId,
+        class: node.class
+      });
+
+      nodes.add({
+        id: outNodeId,
+        label: 'from ' + node.label,
+        font: {size: 17},
+        class: node.class,
+        size: node.size,
+        group: node.group
+      });
+    }
+
+    if (inNodeId.length) {
+      edges.push({
+        to: inNodeId,
+        from: nodeId,
+        class: node.class
+      });
+
+      nodes.add({
+        id: inNodeId,
+        label: 'in ' + node.label,
+        font: {size: 17},
+        class: node.class,
+        size: node.size,
+        group: node.group
+      });
+    }
 
     this.network.setData({nodes: Array.from(nodes), edges});
     this.fullGraphShown = false;
