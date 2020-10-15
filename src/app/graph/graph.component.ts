@@ -1,4 +1,4 @@
-import {AfterViewInit, Component, ElementRef, OnInit, ViewChild} from '@angular/core';
+import {AfterViewInit, Component, ElementRef, EventEmitter, OnInit, Output, ViewChild} from '@angular/core';
 import {Network} from 'vis-network';
 import fakeData from './fakeData.json';
 import fakeDataJava from './fakeDataJava.json';
@@ -10,6 +10,7 @@ import fakeDataJava from './fakeDataJava.json';
 })
 export class GraphComponent implements OnInit, AfterViewInit {
   @ViewChild('siteConfigNetwork', {static: true}) networkContainer: ElementRef;
+  @Output('selectNode') selectNode = new EventEmitter<number> ();
 
   public network: any;
 
@@ -38,6 +39,7 @@ export class GraphComponent implements OnInit, AfterViewInit {
   ngAfterViewInit() {
     const treeData = this.getTreeData(fakeData);
     // const treeData = this.getTreeData(fakeDataJava);
+    this.fullGraphData = treeData;
     this.loadVisTree(treeData);
   }
 
@@ -79,7 +81,8 @@ export class GraphComponent implements OnInit, AfterViewInit {
       // console.log('hoverNode Event:', params);
     });
     this.network.on('selectNode', (params) => {
-      this.showLinksFromNode(params.nodes[0]);
+      this.showLinksFromNode(params.nodes[0], true);
+      this.selectNode.emit(params.nodes[0]);
     });
     this.network.on('afterDrawing', (params) => {
       this.loaded = true;
@@ -195,7 +198,6 @@ export class GraphComponent implements OnInit, AfterViewInit {
       }
     });
 
-    this.fullGraphData = {nodes, edges};
     return {
       nodes,
       edges
@@ -218,13 +220,33 @@ export class GraphComponent implements OnInit, AfterViewInit {
     return node.children;
   }
 
-  showLinksFromNode(nodeId) {
+  showLinksFromNode(nodeId, showLinksFromChildren) {
     this.linkTypes = 'showOptimal';
-    let createdLinksTo = {};
     Object.keys(this._showEdgesOfType).forEach(key => this._showEdgesOfType[key] = false);
 
-    let edges = this.rawData.relations.filter(el => el.to_concept_id === nodeId || el.concept_id === nodeId).map(el => {
+    let edges = this.getAllNodeLinks(nodeId);
+    // let childrenLinks: any = []
+    // edges.forEach(edge => {
+    //   childrenLinks.push(this.getAllNodeLinks(edge.to));
+    // });
+    // edges = edges.concat(childrenLinks.flat())
 
+    const nodes = new Set();
+    edges.forEach(el => {
+      nodes.add(this.nodeLinks[el.to]);
+      nodes.add(this.nodeLinks[el.from]);
+    });
+
+
+    this.network.setData({nodes: Array.from(nodes), edges});
+    this.fullGraphShown = false;
+    this.loaded = false;
+  }
+
+  getAllNodeLinks(nodeId) {
+    const node = this.nodeLinks[nodeId];
+
+    let edges = this.rawData.relations.filter(el => el.to_concept_id === nodeId || el.concept_id === nodeId).map(el => {
       return {
         from: el.concept_id,
         to: el.to_concept_id,
@@ -232,18 +254,17 @@ export class GraphComponent implements OnInit, AfterViewInit {
       };
     });
 
-    const node = this.nodeLinks[nodeId];
     const aspects = this.rawData.concepts.filter(el => el.aspectOf === nodeId).map(node => {
       return {to: node.aspectOf,
-              from: node.id,
-              class: 'aspect',
-              color: '#4d1899',
-              arrows: {
-                from: {
-                  enabled: false
-                }
-              }
-      }
+        from: node.id,
+        class: 'aspect',
+        color: '#4d1899',
+        arrows: {
+          from: {
+            enabled: false
+          }
+        }
+      };
     });
 
     if (node.aspectOf){
@@ -259,6 +280,7 @@ export class GraphComponent implements OnInit, AfterViewInit {
         }
       });
     }
+
     edges = edges.concat(aspects);
     edges = edges.concat(this.rawData.didactic.filter(el => (el.to_id === nodeId || el.from_id === nodeId) &&
       !edges.find(edge => edge.to === el.from_id && edge.from === el.to_id)).map(el => {
@@ -268,21 +290,10 @@ export class GraphComponent implements OnInit, AfterViewInit {
         class: 'didactic',
         dashes: true,
         color: '#9d9d9d'
-      }
+      };
     }));
 
-    const nodes = new Set();
-    edges.forEach(el => {
-      nodes.add(this.nodeLinks[el.to]);
-      nodes.add(this.nodeLinks[el.from]);
-    });
-
-
-
-
-    this.network.setData({nodes: Array.from(nodes), edges});
-    this.fullGraphShown = false;
-    this.loaded = false;
+    return edges;
   }
 
   get showEdgesOfType() {

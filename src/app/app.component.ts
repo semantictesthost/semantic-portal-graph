@@ -11,6 +11,8 @@ import { DataSet } from 'vis-data/peer/esm/vis-data';
 })
 export class AppComponent{
 
+  selectedNode: number;
+
   constructor() { }
 
 }

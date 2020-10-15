@@ -1,1 +1,8 @@
-<app-graph></app-graph>
+<div class="wrap">
+  <div class="graph">
+    <app-graph (selectNode)="selectedNode = $event"></app-graph>
+  </div>
+  <div class="info">
+    <app-node-info [showInfoForId]="selectedNode"></app-node-info>
+  </div>
+</div>
