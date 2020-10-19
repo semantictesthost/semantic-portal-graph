@@ -29,8 +29,8 @@ export class GraphComponent implements OnInit, AfterViewInit {
   loaded = false;
 
 
-  private nodes = {};
-  private edges = {};
+  private nodes: any = {};
+  private edges: any = {};
 
   constructor() { }
 
@@ -44,13 +44,14 @@ export class GraphComponent implements OnInit, AfterViewInit {
     this.rawData = fakeData;
     const treeData = this.getTreeData(fakeData);
     this.formatData(fakeData)
+    const data = this.makeArrayData();
     // const treeData = this.getTreeData(fakeDataJava);
     this.fullGraphData = treeData;
-    this.loadVisTree(treeData);
+    this.loadVisTree(data);
   }
 
   formatData(data) {
-    data.concepts.forEach(node => this.nodes[node.id] = {childNodes: [], parentNodes: []});
+    data.concepts.forEach(node => this.nodes[node.id] = {childNodes: [], parentNodes: [], label: node.concept, font: {size: 17}});
 
     data.relations.forEach(edge => {
       if (!this.edges[edge.class]) this.edges[edge.class] = [];
@@ -58,13 +59,52 @@ export class GraphComponent implements OnInit, AfterViewInit {
       if (!this.nodes[edge.concept_id].childNodes.find(el => el.nodeId === edge.to_concept_id)) {
         this.nodes[edge.concept_id].childNodes.push({nodeId: edge.to_concept_id, relation: edge.class});
         this.nodes[edge.to_concept_id].parentNodes.push({nodeId: edge.concept_id, relation: edge.class});
-        this.edges[edge.class].push({to: edge.to_concept_id, from: edge.concept_id});
       }
 
+      this.edges[edge.class].push({to: edge.to_concept_id, from: edge.concept_id});
     });
 
-    console.log(this.edges, this.nodes)
+    this.edges['aspect'] = [];
+    Object.entries(this.nodes).forEach(([nodeId, node]: any) => {
+      if (node.parentNodes.length === 0 && node.aspectOf) {
+        node.parentNodes.push({nodeId: node.aspectOf, relation: 'aspect'});
+        this.nodes[node.aspectOf].childNodes.push({nodeId, relation: 'aspect'});
+        this.edges['aspect'].push({to: nodeId, from: node.aspectOf});
+      }
+    });
+
+    this.edges['didactic'] = [];
+    data.didactic.forEach(edge => {
+      if (!this.nodes[edge.to_id].childNodes.find(el => el.nodeId === edge.from_id)) {
+        this.nodes[edge.to_id].childNodes.push({nodeId: edge.from_id, relation: edge.class});
+        this.nodes[edge.from_id].parentNodes.push({nodeId: edge.to_id, relation: edge.class});
+        this.edges['didactic'].push({to: edge.from_id, from: edge.to_id});
+      }
+    });
+
+
   }
+
+  makeArrayData() {
+    const nodes = Object.entries(this.nodes).map(([id, value]: any) => ({id, ...value}));
+    const edges = [];
+    nodes.forEach(node => {
+      node.childNodes.forEach(childNode => {
+        edges.push({from: node.id, to: childNode.nodeId});
+      });
+    });
+    console.log(edges)
+    return {nodes, edges};
+  }
+
+  // getEdges(node) {
+  //   const edges = [];
+  //   Object.values(node.childNodes).forEach(childNode => {
+  //     edges.push({from: node.id, to: childNode});
+  //     edges.concat(this.getEdges(childNode));
+  //   });
+  //   return edges;
+  // }
 
   loadVisTree(treedata) {
     const options = {
