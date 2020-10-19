@@ -28,6 +28,10 @@ export class GraphComponent implements OnInit, AfterViewInit {
 
   loaded = false;
 
+
+  private nodes = {};
+  private edges = {};
+
   constructor() { }
 
   ngOnInit(): void {
@@ -37,10 +41,29 @@ export class GraphComponent implements OnInit, AfterViewInit {
   }
 
   ngAfterViewInit() {
+    this.rawData = fakeData;
     const treeData = this.getTreeData(fakeData);
+    this.formatData(fakeData)
     // const treeData = this.getTreeData(fakeDataJava);
     this.fullGraphData = treeData;
     this.loadVisTree(treeData);
+  }
+
+  formatData(data) {
+    data.concepts.forEach(node => this.nodes[node.id] = {childNodes: [], parentNodes: []});
+
+    data.relations.forEach(edge => {
+      if (!this.edges[edge.class]) this.edges[edge.class] = [];
+
+      if (!this.nodes[edge.concept_id].childNodes.find(el => el.nodeId === edge.to_concept_id)) {
+        this.nodes[edge.concept_id].childNodes.push({nodeId: edge.to_concept_id, relation: edge.class});
+        this.nodes[edge.to_concept_id].parentNodes.push({nodeId: edge.concept_id, relation: edge.class});
+        this.edges[edge.class].push({to: edge.to_concept_id, from: edge.concept_id});
+      }
+
+    });
+
+    console.log(this.edges, this.nodes)
   }
 
   loadVisTree(treedata) {
@@ -90,8 +113,6 @@ export class GraphComponent implements OnInit, AfterViewInit {
   }
 
   getTreeData(data) {
-    this.rawData = data;
-
     let nodes = data.concepts.map(el => {
       const nod = {
         id: el.id,
