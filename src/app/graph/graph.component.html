@@ -20,7 +20,7 @@
 
     <div class="links-options" [class.disabled]="linkTypes !== 'ChooseLinks'">
       <div class="form-check"  *ngFor="let edgeType of showEdgesOfType">
-        <input class="form-check-input" type="checkbox" (change)="updateEdges()" [(ngModel)]="_showEdgesOfType[edgeType]" [value]="true" [id]="edgeType">
+        <input class="form-check-input" type="checkbox" (change)="updateEdges()" [(ngModel)]="edges[edgeType].visible" [value]="true" [id]="edgeType">
         <label class="form-check-label" [for]="edgeType">
           {{edgeType}}
         </label>
