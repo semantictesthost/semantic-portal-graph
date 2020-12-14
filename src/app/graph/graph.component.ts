@@ -1,7 +1,10 @@
 import {AfterViewInit, Component, ElementRef, EventEmitter, OnInit, Output, ViewChild} from '@angular/core';
 import {Network} from 'vis-network';
-import fakeData from './fakeData.json';
-import fakeDataJava from './fakeDataJava.json';
+import {HttpClient} from '@angular/common/http';
+import {environment} from '../../environments/environment';
+import {ActivatedRoute, Router} from '@angular/router';
+
+declare var BRANCH: any; // branch initialized in php
 
 @Component({
   selector: 'app-graph',
@@ -32,21 +35,25 @@ export class GraphComponent implements OnInit, AfterViewInit {
   private nodes: any = {};
   edges: any = {};
 
-  constructor() { }
+  constructor(private http: HttpClient) { }
 
   ngOnInit(): void {
-    // this.http.get('http://semantic-portal.net/api/branch/angular').subscribe(res => {
-    //   console.log(res)
-    // })
+
   }
 
   ngAfterViewInit() {
-    this.rawData = fakeDataJava;
-    this.formatData(fakeDataJava)
-    const data = this.makeArrayData();
-    // const treeData = this.getTreeData(fakeDataJava);
-    this.fullGraphData = data;
-    this.loadVisTree(data);
+    this.http.get(`${environment.url}/branch/${BRANCH}`).subscribe(res => {
+      console.log(res)
+
+      this.rawData = res;
+      this.formatData(res)
+      const data = this.makeArrayData();
+      // const treeData = this.getTreeData(fakeDataJava);
+      this.fullGraphData = data;
+      this.loadVisTree(data);
+    })
+
+
   }
 
   formatData(data) {
@@ -439,6 +446,8 @@ export class GraphComponent implements OnInit, AfterViewInit {
   drawFullGraph() {
     this.fullGraphShown = true;
     this.loaded = false;
+
+    this.selectNode.emit(null);
 
     this.linkTypes = 'showOptimal';
     Object.keys(this.edges).forEach(key => this.edges[key].visible = false);

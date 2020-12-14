@@ -1,12 +1,14 @@
-import {Component, Input, OnInit, ViewChild} from '@angular/core';
+import {ChangeDetectorRef, Component, Input, OnChanges, OnInit, SimpleChanges, ViewChild} from '@angular/core';
 import {HttpClient} from '@angular/common/http';
+import {environment} from '../../environments/environment';
+import {ChangeDetection} from '@angular/cli/lib/config/schema';
 
 @Component({
   selector: 'app-node-info',
   templateUrl: './node-info.component.html',
   styleUrls: ['./node-info.component.scss']
 })
-export class NodeInfoComponent implements OnInit {
+export class NodeInfoComponent implements OnInit, OnChanges {
 
   @ViewChild('info') infoElRef;
   @Input('showInfoForId') id: number;
@@ -14,14 +16,26 @@ export class NodeInfoComponent implements OnInit {
   loaded = false;
 
 
-  constructor(private http: HttpClient) { }
+  constructor(private http: HttpClient, private cd: ChangeDetectorRef) { }
 
   ngOnInit(): void {
-    // this.http.get('http://semantic-portal.net/api/summary/concept/' + this.id).subscribe(res => {
-    //   this.loaded = true;
-    //   console.log(res)
-    //   this.infoElRef.nativeElement.innerHTML = res;
-    // })
+
   }
 
+  ngOnChanges(changes: SimpleChanges): void {
+    if (changes.id.currentValue) {
+      this.http.get(environment.url + '/summary/concept/' + changes.id.currentValue,
+        {responseType: 'text'}).subscribe(res => {
+        this.loaded = true;
+        this.cd.detectChanges();
+        this.infoElRef.nativeElement.innerHTML = res;
+      });
+    } else {
+      this.loaded = false;
+      if (this.infoElRef) {
+        this.infoElRef.nativeElement.innerHTML = '';
+      }
+    }
+
+  }
 }

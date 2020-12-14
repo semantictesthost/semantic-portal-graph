@@ -4,7 +4,6 @@
   <button class="btn btn-dark" *ngIf="!fullGraphShown" (click)="drawFullGraph()">Show full graph</button>
 
   <div class="link-types" *ngIf="fullGraphShown">
-    <!--  < class="btn btn-dark"  *ngFor="let edgeType of _showEdgesOfType">{{edgeType}}</>-->
     <div class="form-check">
       <input class="form-check-input" type="radio" (change)="setOptimalEdges()" [(ngModel)]="linkTypes" name="linkTypesRadio" id="opt1" value="showOptimal" checked>
       <label class="form-check-label" for="opt1">
