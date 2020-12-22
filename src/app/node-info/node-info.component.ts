@@ -1,7 +1,7 @@
 import {ChangeDetectorRef, Component, Input, OnChanges, OnInit, SimpleChanges, ViewChild} from '@angular/core';
 import {HttpClient} from '@angular/common/http';
 import {environment} from '../../environments/environment';
-import {ChangeDetection} from '@angular/cli/lib/config/schema';
+import fakeNodeData from './fakeNodeInfo.json';
 
 @Component({
   selector: 'app-node-info',
@@ -19,17 +19,23 @@ export class NodeInfoComponent implements OnInit, OnChanges {
   constructor(private http: HttpClient, private cd: ChangeDetectorRef) { }
 
   ngOnInit(): void {
-
   }
 
   ngOnChanges(changes: SimpleChanges): void {
     if (changes.id.currentValue) {
-      this.http.get(environment.url + '/summary/concept/' + changes.id.currentValue,
-        {responseType: 'text'}).subscribe(res => {
+      if (environment.production) {
+        this.http.get(environment.url + '/summary/concept/' + changes.id.currentValue,
+          {responseType: 'text'}).subscribe(res => {
+          this.loaded = true;
+          this.cd.detectChanges();
+          this.infoElRef.nativeElement.innerHTML = res;
+        });
+      } else {
         this.loaded = true;
         this.cd.detectChanges();
-        this.infoElRef.nativeElement.innerHTML = res;
-      });
+        this.infoElRef.nativeElement.innerHTML = fakeNodeData.fakeNode_6;
+      }
+
     } else {
       this.loaded = false;
       if (this.infoElRef) {

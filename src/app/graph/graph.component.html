@@ -1,4 +1,4 @@
-<div id="mynetwork" [class.invisible]="!loaded" #siteConfigNetwork ></div>
+<div id="mynetwork" class="h-100" [class.invisible]="!loaded" #siteConfigNetwork ></div>
 <div class="wrapper" *ngIf="loaded">
 
   <button class="btn btn-dark" *ngIf="!fullGraphShown" (click)="drawFullGraph()">Show full graph</button>

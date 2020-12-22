@@ -28,7 +28,7 @@
               "src/assets"
             ],
             "styles": [
-              "src/styles.scss",
+              "src/scss/styles.scss",
               "./node_modules/vis-network/styles/vis-network.min.css",
               "./node_modules/bootstrap/dist/css/bootstrap.css"
             ],
@@ -94,7 +94,7 @@
               "src/assets"
             ],
             "styles": [
-              "src/styles.scss"
+              "src/scss/styles.scss"
             ],
             "scripts": []
           }

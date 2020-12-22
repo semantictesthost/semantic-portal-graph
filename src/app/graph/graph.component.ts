@@ -3,8 +3,10 @@ import {Network} from 'vis-network';
 import {HttpClient} from '@angular/common/http';
 import {environment} from '../../environments/environment';
 import {ActivatedRoute, Router} from '@angular/router';
+import {Branch} from '../shared/branch';
+import fakeData from './fakeData.json';
+import {ConceptMapData} from '../shared/concept-map-data';
 
-declare var BRANCH: any; // branch initialized in php
 
 @Component({
   selector: 'app-graph',
@@ -25,14 +27,23 @@ export class GraphComponent implements OnInit, AfterViewInit {
 
   _showEdgesOfType = {};
 
-  private rawData;
+  private rawData: ConceptMapData;
 
   linkTypes = 'showOptimal';
 
   loaded = false;
 
-
-  private nodes: any = {};
+  private nodes: {[key: number]: {
+      childNodes: any[],
+      parentNodes: any[],
+      label: string,
+      font: any,
+      aspectOf: any,
+      class: string,
+      group?: number,
+      parentLabel?: string
+      isMainConcept?: boolean;
+  }} = {};
   edges: any = {};
 
   constructor(private http: HttpClient) { }
@@ -42,27 +53,42 @@ export class GraphComponent implements OnInit, AfterViewInit {
   }
 
   ngAfterViewInit() {
-    this.http.get(`${environment.url}/branch/${BRANCH}`).subscribe(res => {
-      console.log(res)
-
-      this.rawData = res;
-      this.formatData(res)
+    if (!environment.production) {
+      Branch.value = 'angular'
+      this.rawData = fakeData;
+      this.formatData(fakeData);
       const data = this.makeArrayData();
       // const treeData = this.getTreeData(fakeDataJava);
       this.fullGraphData = data;
-      this.loadVisTree(data);
-    })
+      this.createGraph(data);
+    } else {
+      this.http.get(`${environment.url}/branch/${Branch.value}`).subscribe((res: ConceptMapData) => {
+        console.log(res)
 
-
+        this.rawData = res;
+        this.formatData(res);
+        const data = this.makeArrayData();
+        // const treeData = this.getTreeData(fakeDataJava);
+        this.fullGraphData = data;
+        this.createGraph(data);
+      });
+    }
   }
 
-  formatData(data) {
+  formatData(data: ConceptMapData) {
     data.concepts.forEach(node => this.nodes[node.id] = {childNodes: [], parentNodes: [], label: node.concept, font: {size: 17}, aspectOf: node.aspectOf, class: node.class});
+
+    Object.entries(this.nodes).forEach(([id, node]) => {
+      if (node.label.toLowerCase() === Branch.value.toLowerCase()) {
+        node.isMainConcept = true;
+      }
+    });
 
     data.relations.forEach(edge => {
       if (!this.edges[edge.class]) this.edges[edge.class] = [];
 
-      if (!this.nodes[edge.to_concept_id].childNodes.find(el => el.nodeId === edge.concept_id)) {
+      if (!this.nodes[edge.to_concept_id].childNodes.find(el => el.nodeId === edge.concept_id)
+      && this.nodes[edge.concept_id].parentNodes.length === 0) {
         this.nodes[edge.to_concept_id].childNodes.push({nodeId: edge.concept_id, relation: edge.class});
         this.nodes[edge.concept_id].parentNodes.push({nodeId: edge.to_concept_id, relation: edge.class});
 
@@ -96,19 +122,15 @@ export class GraphComponent implements OnInit, AfterViewInit {
 
     this.edges['didactic'] = [];
     data.didactic.forEach(edge => {
-      if (!this.nodes[edge.to_id].childNodes.find(el => el.nodeId === edge.from_id) &&
-        !this.nodes[edge.to_id].parentNodes.find(el => el.nodeId === edge.from_id) &&
-        this.nodes[edge.from_id].parentNodes.length === 0 &&
-        this.nodes[edge.from_id].childNodes.length === 0 ) {
-
-        this.nodes[edge.to_id].childNodes.push({nodeId: edge.from_id, relation: 'didactic'});
-        this.nodes[edge.from_id].parentNodes.push({nodeId: edge.to_id, relation: 'didactic'});
+      if (this.nodes[edge.to_id].parentNodes.length === 0 && !this.nodes[edge.to_id].isMainConcept)  {
+        this.nodes[edge.from_id].childNodes.push({nodeId: edge.to_id, relation: 'didactic'});
+        this.nodes[edge.to_id].parentNodes.push({nodeId: edge.from_id, relation: 'didactic'});
       }
       this.edges['didactic'].push({to: edge.to_id, from: edge.from_id, dashes: true, color: '#9d9d9d'});
     });
   }
 
-  makeArrayData() {
+  makeArrayData(): {nodes: any[], edges: any[]} {
     const nodes = Object.entries(this.nodes).map(([id, value]: any) => {
       value.title = `Тип: ${value.class}`;
         if (value.parentNodes[0]) {
@@ -163,18 +185,16 @@ export class GraphComponent implements OnInit, AfterViewInit {
   //   return edges;
   // }
 
-  loadVisTree(treedata) {
+  createGraph(treedata) {
+    const container = this.networkContainer.nativeElement;
+
     const options = {
-      height: '800px',
+      height: `${container.clientHeight}px`,
       nodes: {
         shape: 'dot',
         size: 13,
-        widthConstraint: {
-          maximum: 250
-        },
-        font: {
-          size: 16
-        },
+        widthConstraint: {maximum: 250},
+        font: {size: 16},
         chosen: {
           label:  (values, id, selected, hovering) => {
             values.strokeWidth = 7;
@@ -194,7 +214,6 @@ export class GraphComponent implements OnInit, AfterViewInit {
       },
     };
 
-    const container = this.networkContainer.nativeElement;
     this.network = new Network(container, treedata, options);
 
     this.network.on('hoverNode', (params) => {
@@ -203,6 +222,7 @@ export class GraphComponent implements OnInit, AfterViewInit {
     this.network.on('selectNode', (params) => {
       this.showLinksFromNode(params.nodes[0], true);
       this.selectNode.emit(params.nodes[0]);
+      console.log(this.nodes[params.nodes[0]]);
     });
     this.network.on('afterDrawing', (params) => {
       this.loaded = true;
@@ -334,11 +354,12 @@ export class GraphComponent implements OnInit, AfterViewInit {
       node.children++; // count child node
     });
     node.size += node.children;
-    node.size = Math.min(node.size, 50);
+    node.size = Math.min(node.size, 40);
+    if (node.isMainConcept) node.size = 55;
     return node.children;
   }
 
-  showLinksFromNode(nodeId, showLinksFromChildren) {
+  showLinksFromNode(nodeId: number, showLinksFromChildren) {
     this.linkTypes = 'showOptimal';
     Object.keys(this.edges).forEach(key => this.edges[key].visible = false);
 
@@ -368,7 +389,7 @@ export class GraphComponent implements OnInit, AfterViewInit {
     this.loaded = false;
   }
 
-  getAllNodeLinks(nodeId) {
+  getAllNodeLinks(nodeId: number) {
     const node = this.nodes[nodeId];
 
     let edges = this.rawData.relations.filter(el => el.to_concept_id === nodeId || el.concept_id === nodeId).map(el => {
