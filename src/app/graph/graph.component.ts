@@ -1,11 +1,14 @@
-import {AfterViewInit, Component, ElementRef, EventEmitter, OnInit, Output, ViewChild} from '@angular/core';
+import {AfterViewInit, ChangeDetectorRef, Component, ElementRef, EventEmitter, NgZone, OnInit, Output, ViewChild} from '@angular/core';
 import {Network} from 'vis-network';
 import {HttpClient} from '@angular/common/http';
 import {environment} from '../../environments/environment';
-import {ActivatedRoute, Router} from '@angular/router';
 import {Branch} from '../shared/branch';
 import fakeData from './fakeData.json';
-import {ConceptMapData} from '../shared/concept-map-data';
+import {ConceptMapData} from '../shared/interfaces/concept-map-data';
+import { cloneDeep, uniq, uniqBy } from 'lodash';
+import {ChangeDetection} from '@angular/cli/lib/config/schema';
+import {INode} from '../shared/interfaces/node';
+import {ConceptRelations} from '../shared/enums/concept-relations.enum';
 
 
 @Component({
@@ -19,13 +22,8 @@ export class GraphComponent implements OnInit, AfterViewInit {
 
   public network: any;
 
-  private nodeLinks = {};
-  private edgeLinks = {};
-
   fullGraphData = {nodes: null, edges: null};
   fullGraphShown = true;
-
-  _showEdgesOfType = {};
 
   private rawData: ConceptMapData;
 
@@ -33,20 +31,12 @@ export class GraphComponent implements OnInit, AfterViewInit {
 
   loaded = false;
 
-  private nodes: {[key: number]: {
-      childNodes: any[],
-      parentNodes: any[],
-      label: string,
-      font: any,
-      aspectOf: any,
-      class: string,
-      group?: number,
-      parentLabel?: string
-      isMainConcept?: boolean;
-  }} = {};
-  edges: any = {};
+  private nodes: {[id: number]: INode} = {};
+  edges: {[key: string]: {values: any[], visible}} = {};
 
-  constructor(private http: HttpClient) { }
+  private mainNode: INode;
+
+  constructor(private http: HttpClient, private zone: NgZone, private cd: ChangeDetectorRef) { }
 
   ngOnInit(): void {
 
@@ -54,11 +44,13 @@ export class GraphComponent implements OnInit, AfterViewInit {
 
   ngAfterViewInit() {
     if (!environment.production) {
-      Branch.value = 'angular'
+      Branch.value = 'angular';
       this.rawData = fakeData;
-      this.formatData(fakeData);
-      const data = this.makeArrayData();
-      // const treeData = this.getTreeData(fakeDataJava);
+      this.formatGraphData(fakeData);
+      this.setChildrenAmountRecursively(this.mainNode);
+      this.setNodesLabels();
+      this.setGraphStyles();
+      const data = this.getOptimalGraphData();
       this.fullGraphData = data;
       this.createGraph(data);
     } else {
@@ -66,26 +58,25 @@ export class GraphComponent implements OnInit, AfterViewInit {
         console.log(res)
 
         this.rawData = res;
-        this.formatData(res);
-        const data = this.makeArrayData();
-        // const treeData = this.getTreeData(fakeDataJava);
+        this.formatGraphData(res);
+        this.setChildrenAmountRecursively(this.mainNode);
+        this.setNodesLabels();
+        this.setGraphStyles();
+        const data = this.getOptimalGraphData();
         this.fullGraphData = data;
         this.createGraph(data);
       });
     }
   }
 
-  formatData(data: ConceptMapData) {
-    data.concepts.forEach(node => this.nodes[node.id] = {childNodes: [], parentNodes: [], label: node.concept, font: {size: 17}, aspectOf: node.aspectOf, class: node.class});
+  private formatGraphData(data: ConceptMapData) {
+    data.concepts.forEach(node => this.nodes[node.id] =
+      {id: node.id, childNodes: [], parentNodes: [], label: node.concept, aspectOf: node.aspectOf, class: node.class});
 
-    Object.entries(this.nodes).forEach(([id, node]) => {
-      if (node.label.toLowerCase() === Branch.value.toLowerCase()) {
-        node.isMainConcept = true;
-      }
-    });
+    this.markMainConceptNode();
 
     data.relations.forEach(edge => {
-      if (!this.edges[edge.class]) this.edges[edge.class] = [];
+      if (!this.edges[edge.class]) this.edges[edge.class] = {values: [], visible: false};
 
       if (!this.nodes[edge.to_concept_id].childNodes.find(el => el.nodeId === edge.concept_id)
       && this.nodes[edge.concept_id].parentNodes.length === 0) {
@@ -94,58 +85,87 @@ export class GraphComponent implements OnInit, AfterViewInit {
 
         this.nodes[edge.concept_id].parentLabel = this.nodes[edge.to_concept_id].label;
         this.nodes[edge.concept_id].group = edge.to_concept_id;
+
       }
 
-      this.edges[edge.class].push({to: edge.concept_id, from: edge.to_concept_id});
+      this.edges[edge.class].values.push({to: edge.concept_id, from: edge.to_concept_id});
     });
 
-    this.edges['aspect'] = [];
+    this.edges[ConceptRelations.Aspect] = {values: [], visible: false};
     Object.entries(this.nodes).forEach(([nodeId, node]: any) => {
       if (node.parentNodes.length === 0 && node.aspectOf) {
-        node.parentNodes.push({nodeId: node.aspectOf, relation: 'aspect'});
-        this.nodes[node.aspectOf].childNodes.push({nodeId, relation: 'aspect'});
+        node.parentNodes.push({nodeId: node.aspectOf, relation: ConceptRelations.Aspect});
+        this.nodes[node.aspectOf].childNodes.push({nodeId, relation: ConceptRelations.Aspect});
 
         node.parentLabel = this.nodes[node.aspectOf].label;
-        node.shape = 'hexagon';
-        node.color = '#4d1899';
+        this.edges[ConceptRelations.Aspect].values.push({
+          to: nodeId,
+          from: node.aspectOf,
+        });
       }
-      this.edges['aspect'].push({
-        to: nodeId,
-        from: node.aspectOf,
-        color: '#4d1899',
-        arrows: {
-          to: {
-            enabled: false
-          }
-        }});
+
     });
 
-    this.edges['didactic'] = [];
+    this.edges[ConceptRelations.Didactic] = {values: [], visible: false};
     data.didactic.forEach(edge => {
       if (this.nodes[edge.to_id].parentNodes.length === 0 && !this.nodes[edge.to_id].isMainConcept)  {
-        this.nodes[edge.from_id].childNodes.push({nodeId: edge.to_id, relation: 'didactic'});
-        this.nodes[edge.to_id].parentNodes.push({nodeId: edge.from_id, relation: 'didactic'});
+        this.nodes[edge.from_id].childNodes.push({nodeId: edge.to_id, relation: ConceptRelations.Didactic});
+        this.nodes[edge.to_id].parentNodes.push({nodeId: edge.from_id, relation: ConceptRelations.Didactic});
       }
-      this.edges['didactic'].push({to: edge.to_id, from: edge.from_id, dashes: true, color: '#9d9d9d'});
+      this.edges[ConceptRelations.Didactic].values.push({to: edge.to_id, from: edge.from_id});
     });
   }
 
-  makeArrayData(): {nodes: any[], edges: any[]} {
-    const nodes = Object.entries(this.nodes).map(([id, value]: any) => {
-      value.title = `Тип: ${value.class}`;
-        if (value.parentNodes[0]) {
-          value.title += `, має віднощення типу: ${value.parentNodes[0].relation} до ${this.nodes[value.parentNodes[0].nodeId].label}`;
-        }
+  private markMainConceptNode() {
+    Object.entries(this.nodes).forEach(([id, node]) => {
+      if (node.label.toLowerCase() === Branch.value.toLowerCase()) {
+        node.isMainConcept = true;
+        this.mainNode = node;
+      }
+    });
+  }
 
-      return {id, ...value};
+  private setGraphStyles() {
+
+    Object.entries(this.nodes).forEach(([id, value]) => {
+      value.font = {size: 17};
+      if (value.aspectOf) {
+        value.shape = 'hexagon';
+        value.color = '#4d1899';
+      }
+      value.size = value.isMainConcept ? 50 : Math.min(10 + value.children, 40);
+      if (value.parentNodes[0] && value.parentNodes[0].relation === ConceptRelations.Didactic) {
+        value.color = '#9d9d9d';
+      }
     });
 
+    Object.entries(this.edges).forEach(([type, edges]) => {
+      if (type === ConceptRelations.Aspect) {
+        edges.values.forEach(edge => {
+          edge.color = '#4d1899';
+          edge.arrows = {
+            to: {
+              enabled: false
+            }
+          };
+        });
+      }
+      if (type === ConceptRelations.Didactic) {
+        edges.values.forEach(edge => {
+          edge.color = '#9d9d9d';
+          edge.dashes = true;
+        });
+      }
+    });
+  }
+
+  private getOptimalGraphData(): {nodes, edges} {
     const edges = [];
-    nodes.forEach(node => {
+    Object.values(this.nodes).forEach(node => {
       node.childNodes.forEach(childNode => {
-        if (childNode.relation === 'aspect') {
+        if (childNode.relation === ConceptRelations.Aspect) {
           edges.push({
-            from: node.id,
+            from: node.id ,
             to: childNode.nodeId,
             color: '#4d1899',
             arrows: {
@@ -153,7 +173,7 @@ export class GraphComponent implements OnInit, AfterViewInit {
                 enabled: false
               }
             }});
-        } else if (childNode.relation === 'didactic'){
+        } else if (childNode.relation === ConceptRelations.Didactic){
           edges.push({
             from: node.id,
             to: childNode.nodeId,
@@ -169,23 +189,22 @@ export class GraphComponent implements OnInit, AfterViewInit {
 
       });
     });
-
-    nodes.filter(node => !node.parent).forEach(headNode => {
-      this.countChildren(headNode.id, nodes);
-    });
-    return {nodes, edges};
+    return {nodes: Object.values(this.nodes), edges};
   }
 
-  // getEdges(node) {
-  //   const edges = [];
-  //   Object.values(node.childNodes).forEach(childNode => {
-  //     edges.push({from: node.id, to: childNode});
-  //     edges.concat(this.getEdges(childNode));
-  //   });
-  //   return edges;
-  // }
+  private setNodesLabels(){
+    Object.entries(this.nodes).map(([id, value]: any) => {
+      value.title = `Тип: ${value.class}`;
+      if (value.parentNodes[0]) {
+        value.title += `, має віднощення типу: ${value.parentNodes[0].relation} до ${this.nodes[value.parentNodes[0].nodeId].label}`;
+      }
 
-  createGraph(treedata) {
+      return {id, ...value};
+    });
+  }
+
+
+  private createGraph(treeData: {nodes: object[], edges: object[]}) {
     const container = this.networkContainer.nativeElement;
 
     const options = {
@@ -214,245 +233,89 @@ export class GraphComponent implements OnInit, AfterViewInit {
       },
     };
 
-    this.network = new Network(container, treedata, options);
+    this.zone.runOutsideAngular(() => {
+      this.network = new Network(container, treeData, options);
+    });
 
     this.network.on('hoverNode', (params) => {
       // console.log('hoverNode Event:', this.nodes[params.node]);
     });
     this.network.on('selectNode', (params) => {
-      this.showLinksFromNode(params.nodes[0], true);
-      this.selectNode.emit(params.nodes[0]);
-      console.log(this.nodes[params.nodes[0]]);
+      this.zone.run(() => {
+        this.showLinksFromNode(params.nodes[0]);
+        this.selectNode.emit(params.nodes[0]);
+        console.log(this.nodes[params.nodes[0]]);
+      });
     });
     this.network.on('afterDrawing', (params) => {
       this.loaded = true;
+      this.cd.detectChanges();
     });
   }
 
-  // getTreeData(data) {
-  //   let nodes = data.concepts.map(el => {
-  //     const nod = {
-  //       id: el.id,
-  //       label: el.concept,
-  //       font: {size: 17},
-  //       class: el.class,
-  //       size: 12,
-  //       aspectOf: el.aspectOf
-  //     };
-  //     this.nodeLinks[el.id] = nod;
-  //
-  //     return nod;
-  //   });
-  //
-  //   // concept_id - child node, to_concept_id - parent node, relation build from small parts to bigger one
-  //   let edges = data.relations.map(el => {
-  //     if (this.edgeLinks[el.concept_id]) return; // take only 1 edge from node
-  //
-  //     this.nodeLinks[el.concept_id].parent = el.to_concept_id;
-  //
-  //     if (!this._showEdgesOfType.hasOwnProperty(el.class)) {
-  //       this._showEdgesOfType[el.class] = false;
-  //     }
-  //
-  //     const edge = {
-  //       from: el.concept_id,
-  //       to: el.to_concept_id,
-  //       class: el.class
-  //     };
-  //     this.edgeLinks[el.concept_id] = edge;
-  //     return edge;
-  //   }).filter(el => el !== undefined);
-  //
-  //   nodes.forEach(node => {
-  //     const linksFromNode = edges.filter(el => el.to === node.id);
-  //     linksFromNode.forEach(link => {
-  //       const childNode = this.nodeLinks[link.from];
-  //       childNode.group = node.id;
-  //       childNode.parent = node.label;
-  //       childNode.relationToParent = link.class;
-  //     });
-  //   });
-  //
-  //   const aspects = nodes.filter(node => node.parent === undefined && node.aspectOf);
-  //   aspects.forEach(node => {
-  //     node.shape = 'hexagon';
-  //     node.color = '#4d1899';
-  //     node.relationToParent = 'aspect';
-  //     node.parent = this.nodeLinks[node.aspectOf].label;
-  //     edges.push({
-  //       to: node.aspectOf,
-  //       from: node.id,
-  //       class: 'aspect',
-  //       color: '#4d1899',
-  //       arrows: {
-  //         from: {
-  //           enabled: false
-  //         }
-  //       }
-  //     });
-  //   });
-  //
-  //   if (data.didactic.length) {
-  //     this._showEdgesOfType['didactic'] = false;
-  //   }
-  //   if (nodes.find(node => node.aspectOf)) {
-  //     this._showEdgesOfType['aspect'] = false;
-  //   }
-  //
-  //   // const freeNodes = nodes.filter(node => node.parent === undefined);
-  //   // freeNodes.forEach(node => {
-  //   //
-  //   //   const edgeTo = data.didactic.find(el => el.to_id === node.id);
-  //   //   if (edgeTo) {
-  //       // node.parent = edgeTo.from_id;
-  //       // edges.push({
-  //       //   to: edgeTo.from_id,
-  //       //   from: edgeTo.to_id,
-  //       //   class: 'didactic',
-  //       //   dashes: true,
-  //       //   color: '#9d9d9d'
-  //       // });
-  //   //   }
-  //   //   const edgeFrom = data.didactic.find(el => el.from_id === node.id);
-  //   //   if (edgeFrom) {
-  //       // edges.push({
-  //       //   to: edgeFrom.from_id,
-  //       //   from: edgeFrom.to_id,
-  //       //   class: 'didactic',
-  //       //   dashes: true,
-  //       //   color: '#9d9d9d'
-  //       // });
-  //   //   }
-  //   // });
-  //
-  //   nodes.filter(node => !node.parent).forEach(headNode => {
-  //     this.countChildren(headNode, edges);
-  //   });
-  //
-  //   nodes.forEach(node => {
-  //     node.title = `Тип: ${node.class}`;
-  //     if (node.parent) {
-  //       node.title += `, має віднощення типу: ${node.relationToParent} до ${node.parent}`;
-  //     }
-  //   });
-  //
-  //   return {
-  //     nodes,
-  //     edges
-  //   };
-  // }
+  private setChildrenAmountRecursively(startNode: INode) {
+    startNode.children = 0;
 
-  countChildren(nodeId: number, nodes) {
-    const node = nodes.find(el => el.id === nodeId);
-    node.children = 0;
-    node.size = 10;
+    if (startNode.childNodes.length === 0) return 0;
 
-    if (node.childNodes.length === 0) return 0;
-
-    node.childNodes.forEach(childNode => {
-      node.children += this.countChildren(childNode.nodeId, nodes); // count grandchildren nodes
-      node.children++; // count child node
+    startNode.childNodes.forEach(childNode => {
+      startNode.children += this.setChildrenAmountRecursively(this.nodes[childNode.nodeId]); // count grandchildren nodes
+      startNode.children++; // count child node
     });
-    node.size += node.children;
-    node.size = Math.min(node.size, 40);
-    if (node.isMainConcept) node.size = 55;
-    return node.children;
+    return startNode.children;
   }
 
-  showLinksFromNode(nodeId: number, showLinksFromChildren) {
+  private showLinksFromNode(nodeId: number) {
     this.linkTypes = 'showOptimal';
     Object.keys(this.edges).forEach(key => this.edges[key].visible = false);
 
-    let edges = this.getAllNodeLinks(nodeId);
-    // let childrenLinks: any = []
-    // edges.forEach(edge => {
-    //   childrenLinks.push(this.getAllNodeLinks(edge.to));
-    // });
-    // edges = edges.concat(childrenLinks.flat())
+    const edges = this.getAllNodeLinks(nodeId);
 
-    let nodes: any = new Set();
+    let nodes = [];
     edges.forEach(el => {
-      nodes.add(Object.assign(this.nodes[el.to], {id: el.to}));
-      nodes.add(Object.assign(this.nodes[el.from], {id: el.from}));
+      nodes.push(cloneDeep(this.nodes[el.to]));
+      nodes.push(cloneDeep(this.nodes[el.from]));
     });
-    nodes = Array.from(nodes);
+
+    nodes = uniqBy(nodes, 'id');
     nodes.forEach(el => {
       if (el.id === nodeId) {
         el.size = 30;
       } else {
         el.size = 10;
       }
-    })
-
+    });
     this.network.setData({nodes, edges});
     this.fullGraphShown = false;
     this.loaded = false;
   }
 
-  getAllNodeLinks(nodeId: number) {
-    const node = this.nodes[nodeId];
-
-    let edges = this.rawData.relations.filter(el => el.to_concept_id === nodeId || el.concept_id === nodeId).map(el => {
-      return {
-        from: el.to_concept_id,
-        to: el.concept_id,
-        class: el.class
-      };
-    });
-
-    const aspects = this.rawData.concepts.filter(el => el.aspectOf === nodeId).map(node => {
-      return {to: node.aspectOf,
-        from: node.id,
-        class: 'aspect',
-        color: '#4d1899',
-        arrows: {
-          to: {
-            enabled: false
-          }
-        }
-      };
-    });
-
-    if (node.aspectOf){
-      aspects.push({
-        to: node.aspectOf,
-        from: nodeId,
-        class: 'aspect',
-        color: '#4d1899',
-        arrows: {
-          to: {
-            enabled: false
-          }
-        }
+  private getAllNodeLinks(nodeId: number) {
+    let edges = [];
+    Object.values(this.edges).forEach(edgeType => {
+      edgeType.values.forEach(edge => {
+        if (edge.to === nodeId || edge.from === nodeId
+          && !edges.find(addedEdge => addedEdge.to === edge.to && addedEdge.from === edge.from))
+            edges.push(cloneDeep(edge));
       });
-    }
-
-    edges = edges.concat(aspects);
-    edges = edges.concat(this.rawData.didactic.filter(el => (el.to_id === nodeId || el.from_id === nodeId) &&
-      !edges.find(edge => edge.to === el.to_id && edge.from === el.from_id)).map(el => {
-      return {
-        to: el.to_id,
-        from: el.from_id,
-        class: 'didactic',
-        dashes: true,
-        color: '#9d9d9d'
-      };
-    }));
+    });
 
     return edges;
   }
 
-  get showEdgesOfType() {
-    return Object.keys(this.edges);
+  get edgesTypesAvailable() {
+    return Object.entries(this.edges)
+      .filter(([key, value]) => value.values.length !== 0)
+      .map(([key, value]) => key);
   }
 
   updateEdges() {
     this.loaded = false;
-    let showEdges: any = Object.entries(this.edges).filter(([key, value]: any) => value.visible === true).map(([key, value]) => value);
+    let showEdges: any = Object.entries(this.edges).filter(([key, value]: any) => value.visible === true).map(([key, value]) => value.values);
 
     showEdges = showEdges.flat();
 
-    this.network.setData({nodes: this.network.body.data.nodes, edges: showEdges})
+    this.network.setData({nodes: this.network.body.data.nodes, edges: showEdges});
   }
 
   setOptimalEdges() {
@@ -474,6 +337,12 @@ export class GraphComponent implements OnInit, AfterViewInit {
     Object.keys(this.edges).forEach(key => this.edges[key].visible = false);
 
     this.network.setData(this.fullGraphData);
+  }
+
+  resize(increaseBy: number) {
+    this.network.moveTo({
+      scale: this.network.getScale() + increaseBy
+    });
   }
 
 }

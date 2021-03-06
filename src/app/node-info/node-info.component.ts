@@ -22,6 +22,7 @@ export class NodeInfoComponent implements OnInit, OnChanges {
   }
 
   ngOnChanges(changes: SimpleChanges): void {
+    console.log('aaaaaa')
     if (changes.id.currentValue) {
       if (environment.production) {
         this.http.get(environment.url + '/summary/concept/' + changes.id.currentValue,

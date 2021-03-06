@@ -1,6 +1,4 @@
-import { Component, AfterViewInit, ElementRef, ViewChild } from '@angular/core';
-import { Network } from 'vis-network';
-import { DataSet } from 'vis-data/peer/esm/vis-data';
+import {ChangeDetectionStrategy, ChangeDetectorRef, Component} from '@angular/core';
 import {Branch} from './shared/branch';
 import {environment} from '../environments/environment';
 
@@ -22,6 +20,12 @@ export class AppComponent{
     if (environment.production) {
       Branch.value = BRANCH;
     }
+  }
+
+
+  get performanceTest() {
+    console.log('test');
+    return null;
   }
 
 }
